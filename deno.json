@@ -1,6 +1,7 @@
 {
   "tasks": {
-    "dev": "deno run --watch main.ts"
+    "dev": "deno run --watch main.ts",
+    "sofa": "deno --allow-env --allow-read --allow-write --allow-run main.ts"
   },
   "imports": {
     "@commander-js/extra-typings": "npm:@commander-js/extra-typings@^15.1.0",
