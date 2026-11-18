@@ -1,8 +1,11 @@
 import { Command } from "@commander-js/extra-typings";
+import { Checkbox } from "@cliffy/prompt";
 import { dirname, join } from "node:path";
+import { adapters } from "../adapters/mod.ts";
 
-const EXAMPLE_YAML = `version: 1
-agents: [claude-code, codex, cursor]
+const exampleYaml = (agents: string[]) =>
+  `version: 1
+agents: [${agents.join(", ")}]
 
 # Catalog: define every MCP and skill exactly once
 mcps:
@@ -63,17 +66,42 @@ async function isNonEmptyDir(path: string): Promise<boolean> {
   }
 }
 
-async function initFresh(dir: string) {
+async function initFresh(dir: string, agents: string[]) {
   await Deno.mkdir(join(dir, "skills"), { recursive: true });
-  await Deno.writeTextFile(join(dir, "sofa.yaml"), EXAMPLE_YAML);
+  await Deno.writeTextFile(join(dir, "sofa.yaml"), exampleYaml(agents));
   await Deno.writeTextFile(join(dir, ".gitignore"), GITIGNORE);
   await Deno.writeTextFile(join(dir, "skills", ".gitkeep"), "");
   await git(["init", "--quiet"], dir);
 }
 
+async function chooseAgents(flag: string | undefined): Promise<string[]> {
+  const all = Object.keys(adapters);
+  if (flag) {
+    const ids = flag.split(",").map((a) => a.trim()).filter(Boolean);
+    const bad = ids.filter((a) => !all.includes(a));
+    if (bad.length) {
+      throw new Error(
+        `unknown agent(s): ${bad.join(", ")} (known: ${all.join(", ")})`,
+      );
+    }
+    return ids;
+  }
+  if (!Deno.stdin.isTerminal()) return [];
+  return await Checkbox.prompt({
+    message: "Which agents do you use?",
+    hint: "space: toggle, a: all, enter: confirm (none selected by default)",
+    options: Object.values(adapters).map((a) => ({
+      name: a.label,
+      value: a.id,
+      checked: false,
+    })),
+  });
+}
+
 export const init = new Command("init")
   .description("Create ~/.sofa (git repo with example sofa.yaml)")
   .option("--from <url>", "clone an existing sofa repo instead of creating one")
+  .option("--agents <list>", "comma-separated agents (skips the menu)")
   .action(async (opts) => {
     const dir = sofaHome();
     try {
@@ -85,7 +113,8 @@ export const init = new Command("init")
         await git(["clone", opts.from, dir]);
         console.log(`Cloned ${opts.from} into ${dir}`);
       } else {
-        await initFresh(dir);
+        const agents = await chooseAgents(opts.agents);
+        await initFresh(dir, agents);
         console.log(`Initialized sofa in ${dir}`);
         console.log(`Edit ${join(dir, "sofa.yaml")} to get started.`);
       }
