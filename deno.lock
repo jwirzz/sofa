@@ -14,9 +14,9 @@
     "jsr:@std/io@~0.225.3": "0.225.3",
     "jsr:@std/path@^1.1.6": "1.1.6",
     "jsr:@std/text@^1.0.19": "1.1.0",
-    "jsr:@std/yaml@^1.3.0": "1.3.0",
     "npm:@commander-js/extra-typings@^15.1.0": "15.1.0_commander@15.1.0",
-    "npm:commander@^15.1.0": "15.1.0"
+    "npm:commander@^15.1.0": "15.1.0",
+    "npm:yaml@^2.9.1": "2.9.1"
   },
   "jsr": {
     "@cliffy/ansi@1.3.1": {
@@ -75,9 +75,6 @@
     },
     "@std/text@1.1.0": {
       "integrity": "3db511996317f63e35b76fe18fe35249723ae0ff6f8305398c78dd64ffa809a7"
-    },
-    "@std/yaml@1.3.0": {
-      "integrity": "b250103854378b8b36cbff0fe95aec017d3d9ce86b489c67605180c602fb4922"
     }
   },
   "npm": {
@@ -89,15 +86,20 @@
     },
     "commander@15.1.0": {
       "integrity": "sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ=="
+    },
+    "yaml@2.9.1": {
+      "integrity": "sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==",
+      "bin": true
     }
   },
   "workspace": {
     "dependencies": [
       "jsr:@cliffy/prompt@^1.3.1",
       "jsr:@std/assert@1",
-      "jsr:@std/yaml@^1.3.0",
+      "jsr:@std/fmt@^1.0.10",
       "npm:@commander-js/extra-typings@^15.1.0",
-      "npm:commander@^15.1.0"
+      "npm:commander@^15.1.0",
+      "npm:yaml@^2.9.1"
     ]
   }
 }
