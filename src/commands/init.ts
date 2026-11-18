@@ -28,6 +28,7 @@ environments:
 const GITIGNORE = `.state.json
 .cache/
 sofa.local.yaml
+bin/
 `;
 
 export function sofaHome(): string {
@@ -58,7 +59,8 @@ async function git(args: string[], cwd?: string) {
 
 async function isNonEmptyDir(path: string): Promise<boolean> {
   try {
-    for await (const _ of Deno.readDir(path)) return true;
+    // bin/ holds the installed sofa binary, so it doesn't count
+    for await (const e of Deno.readDir(path)) if (e.name !== "bin") return true;
     return false;
   } catch (e) {
     if (e instanceof Deno.errors.NotFound) return false;
@@ -110,7 +112,22 @@ export const init = new Command("init")
       }
       if (opts.from) {
         await Deno.mkdir(dirname(dir), { recursive: true });
-        await git(["clone", opts.from, dir]);
+        // git refuses to clone into a non-empty dir (bin/ may exist), so clone aside and move in
+        const tmp = await Deno.makeTempDir({ dir: dirname(dir) });
+        try {
+          await git(["clone", opts.from, tmp]);
+          await Deno.mkdir(dir, { recursive: true });
+          for await (const e of Deno.readDir(tmp)) {
+            await Deno.rename(join(tmp, e.name), join(dir, e.name));
+          }
+          await Deno.writeTextFile(
+            join(dir, ".git", "info", "exclude"),
+            "bin/\n",
+            { append: true },
+          );
+        } finally {
+          await Deno.remove(tmp, { recursive: true }).catch(() => {});
+        }
         console.log(`Cloned ${opts.from} into ${dir}`);
       } else {
         const agents = await chooseAgents(opts.agents);
