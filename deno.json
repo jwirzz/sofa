@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "dev": "deno run --watch main.ts"
+  },
+  "imports": {
+    "@commander-js/extra-typings": "npm:@commander-js/extra-typings@^15.1.0",
+    "@std/assert": "jsr:@std/assert@1",
+    "commander": "npm:commander@^15.1.0"
+  }
+}
