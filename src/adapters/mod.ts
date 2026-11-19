@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { McpServer } from "../config.ts";
 
 export type Servers = Record<string, McpServer>;
@@ -54,6 +54,20 @@ async function writeText(path: string, text: string) {
   await Deno.rename(tmp, path);
 }
 
+/** Remove a folder, then its parent, while they are empty real folders (never home itself). */
+export async function pruneEmpty(dir: string) {
+  for (const d of [dir, dirname(dir)]) {
+    if (resolve(d) === resolve(home()) || !(await Deno.lstat(d).catch(() => null))?.isDirectory) return;
+    if (!await Deno.remove(d).then(() => true, () => false)) return; // not empty
+  }
+}
+
+// a config left with nothing but sofa's emptied section: delete it and its folders if they are empty now
+async function removeText(path: string) {
+  await Deno.remove(path);
+  await pruneEmpty(dirname(path));
+}
+
 // ---------- JSON-based agents ----------
 
 interface JsonSpec {
@@ -101,7 +115,8 @@ function jsonAdapter(spec: JsonSpec): Adapter {
       const after = JSON.stringify(doc, null, 2) + "\n";
       const changed = before === null ? written.length > 0 : after !== before &&
         JSON.stringify(JSON.parse(before || "{}")) !== JSON.stringify(doc);
-      if (changed && !dryRun) await writeText(path, after);
+      const empty = !Object.keys(section).length && Object.keys(doc).every((k) => k === spec.key);
+      if (changed && !dryRun) await (empty ? removeText(path) : writeText(path, after));
       return { written, skipped, changed };
     },
   };
@@ -315,7 +330,7 @@ const codex: Adapter = {
     }
     if (after) after += "\n";
     const changed = after !== before && !(before === "" && after === "");
-    if (changed && !dryRun) await writeText(path, after);
+    if (changed && !dryRun) await (after ? writeText(path, after) : removeText(path));
     return { written, skipped, changed };
   },
 };

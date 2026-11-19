@@ -1,7 +1,7 @@
 import { Command } from "@commander-js/extra-typings";
 import { bold, dim, green } from "@std/fmt/colors";
 import { dirname, join } from "node:path";
-import { adapters, home } from "../adapters/mod.ts";
+nimport { adapters, home, pruneEmpty } from "../adapters/mod.ts";
 import { loadConfig, loadState, resolveEnvs, saveState, type SofaConfig, type State, userCwd } from "../config.ts";
 import { ask, choose, err, fail, interactive, ok, pick, warn } from "../ui.ts";
 import { sofaHome } from "./init.ts";
@@ -61,10 +61,15 @@ async function linkSkills(global: boolean, agents: string[], wanted: string[]) {
   const linkDirs = dirsFor(global, agents);
   for (const dir of dirsFor(global, Object.keys(AGENT_DIRS), true)) {
     const keep = linkDirs.has(dir) ? wanted : [];
+    let removed = false;
     for (const e of await Array.fromAsync(Deno.readDir(dir)).catch(() => [])) {
       const path = join(dir, e.name);
-      if (e.isSymlink && !keep.includes(e.name) && dirname(await Deno.readLink(path)) === src) await Deno.remove(path);
+      if (e.isSymlink && !keep.includes(e.name) && dirname(await Deno.readLink(path)) === src) {
+        await Deno.remove(path);
+        removed = true;
+      }
     }
+    if (removed) await pruneEmpty(dir);
   }
   for (const dir of linkDirs) {
     if (wanted.length) await Deno.mkdir(dir, { recursive: true });
