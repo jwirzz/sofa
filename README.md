@@ -55,3 +55,8 @@ environments:
   base:
     mcps: [playwright]
 ```
+## Local config
+
+Anything you don't want to share through git goes in `~/.sofa/sofa.local.yaml` (same format as `sofa.yaml`) and `~/.sofa/skills.local/`. Both are gitignored and layered on top of the shared config: local MCPs and skills win by name, and environments of the same name are merged.
+
+The commands that edit the config take `-l, --local` to write there instead: `sofa skill add -l`, `sofa skill rm -l`, `sofa env edit -l`, `sofa migrate -l`.

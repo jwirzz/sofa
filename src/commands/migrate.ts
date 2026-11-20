@@ -1,10 +1,12 @@
 import { Command } from "@commander-js/extra-typings";
 import { bold, dim } from "@std/fmt/colors";
 import { cp } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { home } from "../adapters/mod.ts";
+import { loadConfig } from "../config.ts";
+import { sofaHome } from "./init.ts";
 import { confirm, err, interactive, ok, pick, spinner, warn } from "../ui.ts";
-import { envList, readConfig, setEnvList, setSkill, skillsDir, writeConfig } from "./skill.ts";
+import { envList, readConfig, scopedSkillsDir, setEnvList, setSkill, skillPath, writeConfig } from "./skill.ts";
 
 // where `npx skills add -g` keeps its lock file and the skill folders (same logic as the skills CLI)
 const lockPath = () => {
@@ -18,8 +20,9 @@ const exists = (p: string) => Deno.stat(p).then(() => true, () => false);
 
 export const migrate = new Command("migrate")
   .description("Import skills installed globally with `npx skills` into sofa, optionally removing the originals")
-  .action(async () => {
-    const doc = await readConfig();
+  .option("-l, --local", "import into sofa.local.yaml and skills.local/, not synced with git")
+  .action(async (opts) => {
+    const doc = await readConfig(opts.local);
     const lock = await Deno.readTextFile(lockPath()).then(JSON.parse, () => ({}));
     const locked = Object.entries((lock.skills ?? {}) as Record<string, { source: string; sourceType?: string }>);
     const known = doc.toJS()?.skills ?? {};
@@ -27,7 +30,7 @@ export const migrate = new Command("migrate")
     let found = [];
     for (const [name, e] of locked) {
       const dir = dirName(name);
-      if (dir in known || await exists(join(skillsDir(), dir))) continue; // already in sofa
+      if (dir in known || await skillPath(dir)) continue; // already in sofa
       if (await exists(join(globalDir(), dir))) found.push({ name, dir, ...e });
       else warn(`${bold(name)}: in ${dim(lockPath())} but ${dim(join(globalDir(), dir))} is missing, skipped`);
     }
@@ -41,17 +44,18 @@ export const migrate = new Command("migrate")
       found = found.filter((s) => names.includes(s.name));
       if (!found.length) return;
     }
-    const envNames = Object.keys(doc.toJS()?.environments ?? {});
+    const envNames = Object.keys((await loadConfig(sofaHome()).catch(() => null))?.environments ?? {});
     const envs = envNames.length && interactive()
       ? await pick("Add to environments? (enter to skip)", envNames.map((value) => ({ value, checked: value === "base" })))
       : [];
 
-    await Deno.mkdir(skillsDir(), { recursive: true });
+    const destRoot = scopedSkillsDir(opts.local);
+    await Deno.mkdir(destRoot, { recursive: true });
     for (const s of found) {
-      await cp(join(globalDir(), s.dir), join(skillsDir(), s.dir), { recursive: true });
-      setSkill(doc, s.dir, s.sourceType === "local" ? { path: `./skills/${s.dir}` } : { source: s.source, skill: s.name });
+      await cp(join(globalDir(), s.dir), join(destRoot, s.dir), { recursive: true });
+      setSkill(doc, s.dir, s.sourceType === "local" ? { path: `./${basename(destRoot)}/${s.dir}` } : { source: s.source, skill: s.name });
       for (const e of envs) setEnvList(doc, e, "skills", [...new Set([...envList(doc, e, "skills"), s.dir])]);
-      await writeConfig(doc);
+      await writeConfig(doc, opts.local);
       ok(`${bold(s.name)} ${dim(`← ${s.source}${envs.length ? ` → ${envs.join(", ")}` : ""}`)}`);
     }
 

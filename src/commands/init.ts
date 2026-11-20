@@ -28,6 +28,7 @@ environments:
 const GITIGNORE = `.state.json
 .cache/
 sofa.local.yaml
+skills.local/
 bin/
 `;
 
@@ -122,7 +123,7 @@ export const init = new Command("init")
           }
           await Deno.writeTextFile(
             join(dir, ".git", "info", "exclude"),
-            "bin/\n",
+            "bin/\nsofa.local.yaml\nskills.local/\n",
             { append: true },
           );
         } finally {
