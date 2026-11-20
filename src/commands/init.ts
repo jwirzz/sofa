@@ -1,28 +1,28 @@
 import { Command } from "@commander-js/extra-typings";
 import { Checkbox } from "@cliffy/prompt";
 import { dirname, join } from "node:path";
-import { adapters } from "../adapters/mod.ts";
+import { adapters } from "../lib/adapters/mod.ts";
+import { sofaHome } from "../lib/config.ts";
+import { DEFAULT_SKILL, DEFAULT_SKILL_NAME } from "../lib/default_skill.ts";
 
 const exampleYaml = (agents: string[]) =>
   `version: 1
 agents: [${agents.join(", ")}]
 
 # Catalog: define every MCP and skill exactly once
-mcps:
-  playwright:
-    command: npx
-    args: ["-y", "@playwright/mcp@latest"]
+mcps: {}
+  # playwright:
+  #   command: npx
+  #   args: ["-y", "@playwright/mcp@latest"]
 
-skills: {}
+skills:
+  ${DEFAULT_SKILL_NAME}: { path: ./skills/${DEFAULT_SKILL_NAME} } # teaches agents how to manage this config
 
 # Environments: named sets that only reference the catalog
 environments:
   base: # always active
     mcps: []
-    skills: []
-  frontend:
-    mcps: [playwright]
-    skills: []
+    skills: [${DEFAULT_SKILL_NAME}]
 `;
 
 const GITIGNORE = `.state.json
@@ -31,14 +31,6 @@ sofa.local.yaml
 skills.local/
 bin/
 `;
-
-export function sofaHome(): string {
-  const override = Deno.env.get("SOFA_HOME");
-  if (override) return override;
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
-  if (!home) throw new Error("Cannot determine home directory");
-  return join(home, ".sofa");
-}
 
 async function git(args: string[], cwd?: string) {
   let out;
@@ -73,7 +65,8 @@ async function initFresh(dir: string, agents: string[]) {
   await Deno.mkdir(join(dir, "skills"), { recursive: true });
   await Deno.writeTextFile(join(dir, "sofa.yaml"), exampleYaml(agents));
   await Deno.writeTextFile(join(dir, ".gitignore"), GITIGNORE);
-  await Deno.writeTextFile(join(dir, "skills", ".gitkeep"), "");
+  await Deno.mkdir(join(dir, "skills", DEFAULT_SKILL_NAME), { recursive: true });
+  await Deno.writeTextFile(join(dir, "skills", DEFAULT_SKILL_NAME, "SKILL.md"), DEFAULT_SKILL);
   await git(["init", "--quiet"], dir);
 }
 

@@ -1,6 +1,14 @@
 import { parse } from "yaml";
 import { join } from "node:path";
 
+export function sofaHome(): string {
+  const override = Deno.env.get("SOFA_HOME");
+  if (override) return override;
+  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
+  if (!home) throw new Error("Cannot determine home directory");
+  return join(home, ".sofa");
+}
+
 export interface McpServer {
   url?: string;
   headers?: Record<string, string>;

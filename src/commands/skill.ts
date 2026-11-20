@@ -2,10 +2,9 @@ import { Command } from "@commander-js/extra-typings";
 import { bold, dim } from "@std/fmt/colors";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { type Document, isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
-import { home } from "../adapters/mod.ts";
-import { loadConfig, type SkillEntry, userCwd } from "../config.ts";
-import { err, fail, interactive, ok, pick, spinner, warn } from "../ui.ts";
-import { sofaHome } from "./init.ts";
+import { home } from "../lib/adapters/mod.ts";
+import { loadConfig, type SkillEntry, sofaHome, userCwd } from "../lib/config.ts";
+import { err, fail, interactive, ok, pick, spinner, warn } from "../lib/ui.ts";
 
 export const skillsDir = () => join(sofaHome(), "skills");
 /** gitignored skills, added with `-l/--local` */

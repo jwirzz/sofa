@@ -1,10 +1,9 @@
 import { Command } from "@commander-js/extra-typings";
 import { bold, dim, green } from "@std/fmt/colors";
 import { dirname, join } from "node:path";
-import { adapters, home, pruneEmpty } from "../adapters/mod.ts";
-import { loadConfig, loadState, resolveEnvs, saveState, type SofaConfig, type State, userCwd } from "../config.ts";
-import { ask, choose, err, fail, interactive, ok, pick, warn } from "../ui.ts";
-import { sofaHome } from "./init.ts";
+import { adapters, home, pruneEmpty } from "../lib/adapters/mod.ts";
+import { loadConfig, loadState, resolveEnvs, saveState, sofaHome, type SofaConfig, type State, userCwd } from "../lib/config.ts";
+import { ask, choose, err, fail, interactive, ok, pick, warn } from "../lib/ui.ts";
 import { envList, localSkillsDir, readConfig, setEnvList, skillAuthor, skillPath, skillsDir, writeConfig } from "./skill.ts";
 
 // skills dir per agent id (same ids as adapters): [project dir relative to cwd, global dir]

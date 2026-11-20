@@ -23,7 +23,7 @@ sofa <command> [options]
 ```
 
 ```sh
-sofa init [--from <url>]   # create ~/.sofa with sofa.yaml
+sofa init [--from <url>]   # create ~/.sofa with sofa.yaml and a default `sofa` skill
 
 sofa skill add <owner/repo> [-s <skill>] [-e <env>]   # skills from npx skills (e.g. anthropics/skills -s docx)
 sofa skill add <./path> [-e <env>]      # your own skill folder, copied into ~/.sofa/skills

@@ -2,10 +2,9 @@ import { Command } from "@commander-js/extra-typings";
 import { bold, dim } from "@std/fmt/colors";
 import { cp } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { home } from "../adapters/mod.ts";
-import { loadConfig } from "../config.ts";
-import { sofaHome } from "./init.ts";
-import { confirm, err, interactive, ok, pick, spinner, warn } from "../ui.ts";
+import { home } from "../lib/adapters/mod.ts";
+import { loadConfig, sofaHome } from "../lib/config.ts";
+import { confirm, err, interactive, ok, pick, spinner, warn } from "../lib/ui.ts";
 import { envList, readConfig, scopedSkillsDir, setEnvList, setSkill, skillPath, writeConfig } from "./skill.ts";
 
 // where `npx skills add -g` keeps its lock file and the skill folders (same logic as the skills CLI)
