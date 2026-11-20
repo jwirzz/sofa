@@ -1,6 +1,14 @@
 import { parse } from "yaml";
 import { join } from "node:path";
 
+export function sofaHome(): string {
+  const override = Deno.env.get("SOFA_HOME");
+  if (override) return override;
+  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
+  if (!home) throw new Error("Cannot determine home directory");
+  return join(home, ".sofa");
+}
+
 export interface McpServer {
   url?: string;
   headers?: Record<string, string>;
@@ -31,24 +39,44 @@ export interface SofaConfig {
   environments: Record<string, Environment>;
 }
 
-export async function loadConfig(dir: string): Promise<SofaConfig> {
-  const path = join(dir, "sofa.yaml");
+async function readYaml(path: string): Promise<Partial<SofaConfig> | null> {
   let text: string;
   try {
     text = await Deno.readTextFile(path);
   } catch (e) {
-    if (e instanceof Deno.errors.NotFound) {
-      throw new Error(`${path} not found - run \`sofa init\` first`);
-    }
+    if (e instanceof Deno.errors.NotFound) return null;
     throw e;
   }
-  const raw = (parse(text) ?? {}) as Partial<SofaConfig>;
+  return (parse(text) ?? {}) as Partial<SofaConfig>;
+}
+
+const union = <T>(a: T[] = [], b: T[] = []) => [...new Set([...a, ...b])];
+
+/**
+ * Loads sofa.yaml and, unless `includeLocal` is false, layers sofa.local.yaml (gitignored) on top:
+ * local mcps/skills win by name, environments are merged (lists are unioned), agents are unioned.
+ */
+export async function loadConfig(dir: string, includeLocal = true): Promise<SofaConfig> {
+  const path = join(dir, "sofa.yaml");
+  const shared = await readYaml(path);
+  if (!shared) throw new Error(`${path} not found - run \`sofa init\` first`);
+  const local = includeLocal ? await readYaml(join(dir, "sofa.local.yaml")) : null;
+
+  const environments: Record<string, Environment> = { ...shared.environments };
+  for (const [name, env] of Object.entries(local?.environments ?? {})) {
+    const base = environments[name];
+    environments[name] = {
+      extends: union(base?.extends, env?.extends),
+      mcps: union(base?.mcps, env?.mcps),
+      skills: union(base?.skills, env?.skills),
+    };
+  }
   return {
-    version: raw.version ?? 1,
-    agents: raw.agents ?? [],
-    mcps: raw.mcps ?? {},
-    skills: raw.skills ?? {},
-    environments: raw.environments ?? {},
+    version: shared.version ?? 1,
+    agents: union(shared.agents, local?.agents),
+    mcps: { ...shared.mcps, ...local?.mcps },
+    skills: { ...shared.skills, ...local?.skills },
+    environments,
   };
 }
 

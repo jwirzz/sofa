@@ -1,9 +1,8 @@
 import { Command } from "@commander-js/extra-typings";
 import { bold, dim, green } from "@std/fmt/colors";
-import { adapters } from "../adapters/mod.ts";
-import { loadConfig, loadState } from "../config.ts";
-import { fail } from "../ui.ts";
-import { sofaHome } from "./init.ts";
+import { adapters } from "../lib/adapters/mod.ts";
+import { loadConfig, loadState, sofaHome } from "../lib/config.ts";
+import { fail } from "../lib/ui.ts";
 
 const list = new Command("list")
   .alias("ls")

@@ -2,26 +2,51 @@ import { Command } from "@commander-js/extra-typings";
 import { bold, dim } from "@std/fmt/colors";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { type Document, isMap, isScalar, isSeq, parse, parseDocument } from "yaml";
-import { home } from "../adapters/mod.ts";
-import { type SkillEntry, userCwd } from "../config.ts";
-import { err, fail, interactive, ok, pick, spinner, warn } from "../ui.ts";
-import { sofaHome } from "./init.ts";
+import { home } from "../lib/adapters/mod.ts";
+import { loadConfig, type SkillEntry, sofaHome, userCwd } from "../lib/config.ts";
+import { err, fail, interactive, ok, pick, spinner, warn } from "../lib/ui.ts";
 
 export const skillsDir = () => join(sofaHome(), "skills");
-const configPath = () => join(sofaHome(), "sofa.yaml");
+/** gitignored skills, added with `-l/--local` */
+export const localSkillsDir = () => join(sofaHome(), "skills.local");
+export const scopedSkillsDir = (local?: boolean) => local ? localSkillsDir() : skillsDir();
+/** folder of an installed skill (local skills win over shared ones), or null */
+export async function skillPath(name: string) {
+  for (const dir of [localSkillsDir(), skillsDir()]) {
+    const p = join(dir, name);
+    if (await Deno.lstat(p).then(() => true, () => false)) return p;
+  }
+  return null;
+}
+const configPath = (local?: boolean) => join(sofaHome(), local ? "sofa.local.yaml" : "sofa.yaml");
 
-export async function readConfig() {
-  const src = await Deno.readTextFile(configPath()).catch((e) => {
-    if (e instanceof Deno.errors.NotFound) fail(`${configPath()} not found, run sofa init first`);
-    throw e;
+/** Parsed sofa.yaml, or with `local` sofa.local.yaml (an empty document if it does not exist yet). */
+export async function readConfig(local = false) {
+  const path = configPath(local);
+  const src = await Deno.readTextFile(path).catch((e) => {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+    if (local) return "";
+    fail(`${path} not found, run sofa init first`);
   });
   const doc = parseDocument(src);
-  if (doc.errors.length) fail(`${configPath()}: ${doc.errors[0].message}`);
+  if (doc.errors.length) fail(`${path}: ${doc.errors[0].message}`);
   return doc;
 }
 
-export const writeConfig = (doc: Document) =>
-  Deno.writeTextFile(configPath(), doc.toString({ flowCollectionPadding: false }));
+// the local files are meant to stay out of git; make sure of it even in repos cloned from elsewhere
+async function ensureIgnored() {
+  const exclude = join(sofaHome(), ".git", "info", "exclude");
+  const cur = await Deno.readTextFile(exclude).catch(() => null);
+  if (cur === null) return;
+  const have = cur.split(/\r?\n/);
+  const missing = ["sofa.local.yaml", "skills.local/"].filter((l) => !have.includes(l));
+  if (missing.length) await Deno.writeTextFile(exclude, (cur.endsWith("\n") || !cur ? "" : "\n") + missing.join("\n") + "\n");
+}
+
+export async function writeConfig(doc: Document, local = false) {
+  if (local) await ensureIgnored();
+  await Deno.writeTextFile(configPath(local), doc.toString({ flowCollectionPadding: false }));
+}
 
 export function setSkill(doc: Document, name: string, entry: Record<string, string>) {
   const cur = doc.get("skills", true);
@@ -75,9 +100,10 @@ async function localDir(pkg: string) {
   return null;
 }
 
-const installedSkills = async () =>
-  (await Array.fromAsync(Deno.readDir(skillsDir())).catch(() => []))
+const installedIn = async (dir: string) =>
+  (await Array.fromAsync(Deno.readDir(dir)).catch(() => []))
     .filter((e) => e.isDirectory).map((e) => e.name).sort();
+const installedSkills = async (local?: boolean) => installedIn(scopedSkillsDir(local));
 
 const add = new Command("add")
   .alias("install")
@@ -85,11 +111,13 @@ const add = new Command("add")
   .argument("<package>", "skill package (e.g. anthropics/skills) or local path")
   .option("-s, --skill <names...>", "only install these skills (asks if omitted)")
   .option("-e, --env <names...>", "also add the skills to these environments (asks if omitted)")
+  .option("-l, --local", "keep it local: sofa.local.yaml and skills.local/, not synced with git")
   .action(async (pkg, opts) => {
-    const doc = await readConfig();
+    const doc = await readConfig(opts.local);
     const localPath = await localDir(pkg);
-    const local = localPath !== null;
-    await Deno.mkdir(skillsDir(), { recursive: true });
+    const fromDisk = localPath !== null;
+    const destRoot = scopedSkillsDir(opts.local);
+    await Deno.mkdir(destRoot, { recursive: true });
     const tmp = await Deno.makeTempDir({ dir: sofaHome() });
     const cleanup = () => {
       try {
@@ -131,20 +159,20 @@ const add = new Command("add")
       }
       if (!found.length) return warn("no skills installed");
 
-      const known = Object.keys(doc.toJS()?.environments ?? {});
+      const known = Object.keys((await loadConfig(sofaHome()).catch(() => null))?.environments ?? {});
       let envs = opts.env ?? [];
       if (!opts.env && known.length && interactive()) {
         envs = await pick("Add to environments? (enter to skip)", known.map((value) => ({ value })));
       }
       for (const r of found) {
         const dir = basename(r.path);
-        const dest = join(skillsDir(), dir);
+        const dest = join(destRoot, dir);
         await Deno.remove(dest, { recursive: true }).catch(() => {});
         await Deno.rename(r.path, dest);
-        setSkill(doc, dir, local ? { path: `./skills/${dir}` } : { source: pkg, skill: r.name });
+        setSkill(doc, dir, fromDisk ? { path: `./${basename(destRoot)}/${dir}` } : { source: pkg, skill: r.name });
         for (const e of envs) setEnvList(doc, e, "skills", [...new Set([...envList(doc, e, "skills"), dir])]);
-        await writeConfig(doc);
-        ok(`${bold(r.name)}${envs.length ? dim(` → ${envs.join(", ")}`) : ""}`);
+        await writeConfig(doc, opts.local);
+        ok(`${bold(r.name)}${opts.local ? dim(" (local)") : ""}${envs.length ? dim(` → ${envs.join(", ")}`) : ""}`);
       }
       const created = envs.filter((e) => !known.includes(e));
       if (created.length) ok(`new environment: ${created.map((e) => bold(e)).join(", ")}`);
@@ -161,7 +189,7 @@ export function skillAuthor(e?: SkillEntry | null) {
 
 // description from the SKILL.md frontmatter, on one line
 async function skillDescription(name: string) {
-  const md = await Deno.readTextFile(join(skillsDir(), name, "SKILL.md")).catch(() => "");
+  const md = await Deno.readTextFile(join(await skillPath(name) ?? skillsDir(), "SKILL.md")).catch(() => "");
   const front = md.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
   try {
     return String(parse(front)?.description ?? "").replace(/\s+/g, " ").trim();
@@ -174,19 +202,19 @@ const list = new Command("list")
   .alias("ls")
   .description("List installed skills with author and description")
   .action(async () => {
-    const names = await installedSkills();
+    const localNames = new Set(await installedSkills(true));
+    const names = [...new Set([...await installedSkills(), ...localNames])].sort();
     if (!names.length) return console.log(dim("no skills installed"));
-    const catalog: Record<string, SkillEntry> = await Deno.readTextFile(configPath())
-      .then((s) => parseDocument(s).toJS()?.skills ?? {}, () => ({}));
+    const catalog: Record<string, SkillEntry> = (await loadConfig(sofaHome()).catch(() => null))?.skills ?? {};
     const authors = names.map((n) => skillAuthor(catalog[n]));
     const nw = Math.max(...names.map((n) => n.length));
     const aw = Math.max(...authors.map((a) => a.length));
     const cols = Deno.stdout.isTerminal() ? Deno.consoleSize().columns : Infinity;
     for (const [i, n] of names.entries()) {
-      const room = cols - nw - aw - 4;
+      const room = cols - nw - aw - 12;
       let desc = await skillDescription(n);
       if (desc.length > room) desc = desc.slice(0, Math.max(room - 1, 0)) + "…";
-      console.log(`${bold(n.padEnd(nw))}  ${authors[i].padEnd(aw)}  ${dim(desc)}`);
+      console.log(`${bold(n.padEnd(nw))}  ${authors[i].padEnd(aw)}  ${dim(desc)}${localNames.has(n) ? dim(" [local]") : ""}`);
     }
   });
 
@@ -194,17 +222,18 @@ const remove = new Command("remove")
   .alias("rm")
   .description("Remove skills from ~/.sofa/skills and sofa.yaml")
   .argument("[names...]", "skill names (asks if omitted)")
-  .action(async (names) => {
-    const doc = await readConfig();
+  .option("-l, --local", "remove local skills (sofa.local.yaml and skills.local/)")
+  .action(async (names, opts) => {
+    const doc = await readConfig(opts.local);
     if (!names.length) {
       if (!interactive()) fail("which skills? pass their names (see sofa skill list)");
-      const installed = await installedSkills();
+      const installed = await installedSkills(opts.local);
       if (!installed.length) return console.log(dim("no skills installed"));
       names = await pick("Remove which skills?", installed.map((value) => ({ value })));
     }
     for (const n of names) {
       const safe = !/[\\/]|^\.+$/.test(n);
-      const onDisk = safe && await Deno.remove(join(skillsDir(), n), { recursive: true }).then(
+      const onDisk = safe && await Deno.remove(join(scopedSkillsDir(opts.local), n), { recursive: true }).then(
         () => true,
         (e) => {
           if (e instanceof Deno.errors.NotFound) return false;
@@ -216,7 +245,7 @@ const remove = new Command("remove")
         err(`${n}: not installed (see sofa skill list)`);
         continue;
       }
-      await writeConfig(doc);
+      await writeConfig(doc, opts.local);
       ok(`${bold(n)} removed`);
     }
   });
