@@ -1,7 +1,7 @@
 import { Command } from "@commander-js/extra-typings";
 import { join } from "node:path";
-import { home } from "../adapters/mod.ts";
-import { sofaHome } from "./init.ts";
+import { home } from "../lib/adapters/mod.ts";
+import { sofaHome } from "../lib/config.ts";
 
 type Json = Record<string, unknown>;
 

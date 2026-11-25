@@ -1,11 +1,10 @@
 import { Command } from "@commander-js/extra-typings";
 import { bold, dim, green } from "@std/fmt/colors";
 import { dirname, join } from "node:path";
-nimport { adapters, home, pruneEmpty } from "../adapters/mod.ts";
-import { loadConfig, loadState, resolveEnvs, saveState, type SofaConfig, type State, userCwd } from "../config.ts";
-import { ask, choose, err, fail, interactive, ok, pick, warn } from "../ui.ts";
-import { sofaHome } from "./init.ts";
-import { envList, readConfig, setEnvList, skillAuthor, skillsDir, writeConfig } from "./skill.ts";
+import { adapters, home, pruneEmpty } from "../lib/adapters/mod.ts";
+import { loadConfig, loadState, resolveEnvs, saveState, sofaHome, type SofaConfig, type State, userCwd } from "../lib/config.ts";
+import { ask, choose, err, fail, interactive, ok, pick, warn } from "../lib/ui.ts";
+import { envList, localSkillsDir, readConfig, setEnvList, skillAuthor, skillPath, skillsDir, writeConfig } from "./skill.ts";
 
 // skills dir per agent id (same ids as adapters): [project dir relative to cwd, global dir]
 const inHome = (p: string) => () => join(home(), p);
@@ -46,7 +45,7 @@ function dirsFor(global: boolean, agents: string[], quiet = false) {
 async function installedOnly(cfg: SofaConfig, names: string[]) {
   const out: string[] = [];
   for (const n of names) {
-    if (await exists(join(skillsDir(), n))) out.push(n);
+    if (await skillPath(n)) out.push(n);
     else {
       const e = cfg.skills[n];
       warn(`${bold(n)}: not installed${e?.source ? `, run: sofa skill add ${e.source} -s ${e.skill ?? n}` : ""}`);
@@ -57,14 +56,14 @@ async function installedOnly(cfg: SofaConfig, names: string[]) {
 
 // make the agents' skill dirs hold exactly the `wanted` sofa links; anything sofa didn't create is left alone
 async function linkSkills(global: boolean, agents: string[], wanted: string[]) {
-  const src = skillsDir();
+  const srcs = [skillsDir(), localSkillsDir()];
   const linkDirs = dirsFor(global, agents);
   for (const dir of dirsFor(global, Object.keys(AGENT_DIRS), true)) {
     const keep = linkDirs.has(dir) ? wanted : [];
     let removed = false;
     for (const e of await Array.fromAsync(Deno.readDir(dir)).catch(() => [])) {
       const path = join(dir, e.name);
-      if (e.isSymlink && !keep.includes(e.name) && dirname(await Deno.readLink(path)) === src) {
+      if (e.isSymlink && !keep.includes(e.name) && srcs.includes(dirname(await Deno.readLink(path)))) {
         await Deno.remove(path);
         removed = true;
       }
@@ -75,7 +74,7 @@ async function linkSkills(global: boolean, agents: string[], wanted: string[]) {
     if (wanted.length) await Deno.mkdir(dir, { recursive: true });
     for (const name of wanted) {
       const path = join(dir, name);
-      const target = join(src, name);
+      const target = (await skillPath(name))!;
       if ((await Deno.readLink(path).catch(() => null)) === target) continue;
       if (await exists(path)) warn(`${dim(path)} exists and is not managed by sofa, skipped`);
       else await Deno.symlink(target, path, { type: "junction" }); // junction: no admin rights needed on Windows, ignored elsewhere
@@ -139,10 +138,13 @@ const use = new Command("use")
 const edit = new Command("edit")
   .description("Choose interactively which skills and MCPs belong to an environment")
   .argument("[name]", "environment, created if new (asks if omitted)")
-  .action(async (name) => {
+  .option("-l, --local", "write to sofa.local.yaml, not synced with git")
+  .action(async (name, opts) => {
     if (!interactive()) fail("sofa env edit needs a terminal, or edit sofa.yaml directly");
-    const doc = await readConfig();
-    const raw = doc.toJS() ?? {};
+    const doc = await readConfig(opts.local);
+    const merged = await config();
+    const shared = opts.local ? await loadConfig(sofaHome(), false) : merged;
+    const raw = { environments: opts.local ? merged.environments : doc.toJS()?.environments, skills: merged.skills, mcps: merged.mcps };
     const NEW = "\0new";
     let env = name ?? await choose("Which environment?", [
       ...Object.keys(raw.environments ?? {}).map((value) => ({ value })),
@@ -153,7 +155,9 @@ const edit = new Command("edit")
     const chosen = { skills: [] as string[], mcps: [] as string[] };
     const kinds = [["skills", "Skills", "sofa skill add"], ["mcps", "MCPs", "add them under mcps: in sofa.yaml"]] as const;
     for (const [key, label, howToAdd] of kinds) {
-      const catalog = Object.keys(raw[key] ?? {});
+      // in local mode, whatever the shared environment already has is on anyway
+      const inShared = shared.environments[env]?.[key] ?? [];
+      const catalog = Object.keys(raw[key] ?? {}).filter((n) => !opts.local || !inShared.includes(n));
       const current = envList(doc, env, key);
       if (!catalog.length) {
         console.log(dim(`  no ${label} in sofa.yaml yet (${howToAdd})`));
@@ -166,8 +170,8 @@ const edit = new Command("edit")
       );
     }
     for (const [key] of kinds) setEnvList(doc, env, key, chosen[key]);
-    await writeConfig(doc);
-    ok(`${bold(env)}  ${dim(`skills: ${chosen.skills.join(", ") || "-"} · mcps: ${chosen.mcps.join(", ") || "-"}`)}`);
+    await writeConfig(doc, opts.local);
+    ok(`${bold(env)}${opts.local ? dim(" (local)") : ""}  ${dim(`skills: ${chosen.skills.join(", ") || "-"} · mcps: ${chosen.mcps.join(", ") || "-"}`)}`);
     if (Object.values((await loadState(sofaHome())).active).some((envs) => envs.includes(env))) {
       console.log(dim(`  ${env} is active somewhere, run sofa env use again to apply`));
     }
